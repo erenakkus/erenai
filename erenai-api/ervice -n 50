@@ -1,0 +1,12 @@
+[0;1;31m×[0m erenai-api.service - ErenAI API Sunucusu
+     Loaded: loaded (]8;;file://erenai/etc/systemd/system/erenai-api.service/etc/systemd/system/erenai-api.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;31mfailed[0m (Result: exit-code) since Sun 2025-04-06 14:54:46 UTC; 10s ago
+   Duration: 248ms
+    Process: 38408 ExecStart=/home/erenai/erenai-api/venv/bin/python3 /home/erenai/erenai-api/app.py [0;1;31m(code=exited, status=1/FAILURE)[0m
+   Main PID: 38408 (code=exited, status=1/FAILURE)
+        CPU: 247ms
+
+Apr 06 14:54:46 erenai systemd[1]: erenai-api.service: Scheduled restart job, restart counter is at 5.
+Apr 06 14:54:46 erenai systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185merenai-api.service: Start request repeated too quickly.[0m
+Apr 06 14:54:46 erenai systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185merenai-api.service: Failed with result 'exit-code'.[0m
+Apr 06 14:54:46 erenai systemd[1]: [0;1;31m[0;1;39m[0;1;31mFailed to start erenai-api.service - ErenAI API Sunucusu.[0m
