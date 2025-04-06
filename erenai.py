@@ -31,7 +31,7 @@ def main():
 
     # Eğer veritabanında yoksa GPT'ye sor
     answer = ask_gpt(api_key, question)
-    print(f"ErenAI (GPT): {answer}")
+    print(f"ErenAI : {answer}")
 
     # Veritabanına kaydet
     save_to_api_server(question, answer)
