@@ -2,7 +2,6 @@
 import os
 import stat
 import json
-import shutil
 
 CONFIG_PATH = os.path.expanduser("~/.erenai_config.json")
 BIN_PATH = "/usr/local/bin/erenai"
@@ -24,9 +23,13 @@ def make_executable():
     print(f"[+] {SCRIPT_PATH} çalıştırılabilir yapıldı.")
 
 def create_symlink():
-    if os.path.exists(BIN_PATH):
-        os.remove(BIN_PATH)
-    os.symlink(SCRIPT_PATH, BIN_PATH)
+    # Bash wrapper script yazılıyor
+    wrapper = f'''#!/usr/bin/env bash
+python3 {SCRIPT_PATH} "$@"
+'''
+    with open(BIN_PATH, 'w') as f:
+        f.write(wrapper)
+    os.chmod(BIN_PATH, 0o755)
     print(f"[+] {BIN_PATH} komutu eklendi.")
 
 def main():
