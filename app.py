@@ -1,60 +1,53 @@
 from flask import Flask, request, jsonify
 import sqlite3
-from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Güvenli değil ama test için uygun, sonra domain bazlı sınırları eklersin
+DB_PATH = "erenai.db"
 
-DB_FILE = "erenai.db"
-
+# Veritabanını oluştur
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS knowledge (
-            question TEXT PRIMARY KEY,
-            answer TEXT NOT NULL
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS qa (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question TEXT UNIQUE,
+            answer TEXT
         )
-    ''')
+    """)
     conn.commit()
     conn.close()
 
-@app.route('/ask')
+@app.route("/ask", methods=["POST"])
 def ask():
-    question = request.args.get("q", "").strip()
-    if not question:
-        return jsonify({"error": "Soru eksik"}), 400
+    data = request.get_json()
+    question = data.get("question")
 
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT answer FROM knowledge WHERE question = ?", (question,))
-    row = c.fetchone()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT answer FROM qa WHERE question = ?", (question,))
+    result = cursor.fetchone()
     conn.close()
 
-    if row:
-        return jsonify({"answer": row[0]})
+    if result:
+        return jsonify({"answer": result[0]})
     else:
         return jsonify({"answer": None})
 
-@app.route('/save', methods=["POST"])
+@app.route("/save", methods=["POST"])
 def save():
     data = request.get_json()
-    question = data.get("question", "").strip()
-    answer = data.get("answer", "").strip()
+    question = data.get("question")
+    answer = data.get("answer")
 
-    if not question or not answer:
-        return jsonify({"error": "Eksik veri"}), 400
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO qa (question, answer) VALUES (?, ?)", (question, answer))
+    conn.commit()
+    conn.close()
 
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("INSERT OR REPLACE INTO knowledge (question, answer) VALUES (?, ?)", (question, answer))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"status": "saved"})
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     init_db()
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host="0.0.0.0", port=5000)
