@@ -25,7 +25,9 @@ CONFIG = {
     "context_length": 5,  # Son 5 etkileşimi bağlam olarak tut
     "language": os.environ.get("ERENAI_LANG", "tr"),  # Varsayılan dil
     "command_suggestions": True,  # Komut önerileri aktif
-    "max_command_history": 50  # Öğrenme için tutulacak maksimum komut sayısı
+    "max_command_history": 50,  # Öğrenme için tutulacak maksimum komut sayısı
+    "CENTRAL_API_URL": os.environ.get("ERENAI_CENTRAL_API_URL", ""),
+    "USER_API_KEY": os.environ.get("ERENAI_USER_API_KEY", "")
 }
 
 def setup_database():
@@ -83,6 +85,12 @@ def setup_database():
     conn.commit()
     conn.close()
 
+    # Merkezi API ayarlarını kontrol et
+    if not CONFIG["CENTRAL_API_URL"]:
+        print("Central API URL is not configured. Please set the ERENAI_CENTRAL_API_URL environment variable.")
+    if not CONFIG["USER_API_KEY"]:
+        print("User API Key is not configured. Please set the ERENAI_USER_API_KEY environment variable. You can obtain this key from your ErenAI central server.")
+
 def get_or_create_session_id():
     """Mevcut oturum ID'sini alır veya yeni bir tane oluşturur"""
     if os.path.exists(CONFIG["session_file"]):
@@ -119,27 +127,52 @@ def get_user_settings():
     return settings
 
 def log_interaction(query, response, source):
-    """Etkileşimi veritabanına kaydeder"""
+    """Etkileşimi merkezi API'ye veya yerel veritabanına kaydeder."""
+    if CONFIG["CENTRAL_API_URL"] and CONFIG["USER_API_KEY"]:
+        # Merkezi API yapılandırılmışsa, SADECE API'ye loglamayı dene.
+        api_url = f"{CONFIG['CENTRAL_API_URL'].rstrip('/')}/interactions"
+        payload = {
+            "api_key": CONFIG['USER_API_KEY'],
+            "query": query,
+            "response": response,
+            "language": detect_language(query),
+            "source": source
+        }
+        try:
+            resp = requests.post(api_url, json=payload, timeout=10)
+            if resp.status_code == 201:
+                # print("Interaction logged to central server.") # Optional
+                return # Başarılı loglama, çık.
+            else:
+                print(f"Central server returned error {resp.status_code} for logging: {resp.text}")
+                return # API hatası, çık (yerel loglama yok).
+        except requests.exceptions.RequestException as e:
+            print(f"Error connecting to central server for logging: {e}")
+            return # Bağlantı hatası, çık (yerel loglama yok).
+        # NOT: Eğer buraya gelinirse, API'ye loglama denenmiş ama başarısız olmuştur.
+        # Subtask'a göre yerel fallback yapılmaz.
+    else:
+        # Merkezi API yapılandırılmamışsa, uyarı ver ve yerel veritabanına logla.
+        print("Warning: Central API not configured. Logging interaction to local SQLite database.")
+        # Yerel loglama kodu aşağıda devam ediyor.
+    
+    # Bu kısım yalnızca merkezi API yapılandırılmadığında çalışır.
     conn = sqlite3.connect(CONFIG["db_path"])
     cursor = conn.cursor()
-    
-    # Sorgu hash'i oluştur
     query_hash = hashlib.md5(query.encode()).hexdigest()
-    
-    # Oturum ID'sini al
     session_id = get_or_create_session_id()
-    
-    # Dil tespiti (basit)
     language = detect_language(query)
     
-    # Etkileşimi kaydet
-    cursor.execute(
-        "INSERT INTO interactions (query_hash, query, response, timestamp, source, session_id, language) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (query_hash, query, response, datetime.now().isoformat(), source, session_id, language)
-    )
-    
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute(
+            "INSERT INTO interactions (query_hash, query, response, timestamp, source, session_id, language) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (query_hash, query, response, datetime.now().isoformat(), source, session_id, language)
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"SQLite error during log_interaction: {e}")
+    finally:
+        conn.close()
 
 def detect_language(text):
     """Basit dil tespiti yapar (Türkçe/İngilizce)"""
@@ -190,6 +223,80 @@ def get_from_database(query):
     
     return result[0] if result else None
 
+def get_from_central_api(query):
+    """Merkezi API'den sorgu için cevap arar."""
+    # Bu fonksiyon çağrıldığında CENTRAL_API_URL ve USER_API_KEY'in ayarlı olduğu varsayılır.
+    # get_from_database ana fonksiyonu bu kontrolü yapar.
+    
+    api_url = f"{CONFIG['CENTRAL_API_URL'].rstrip('/')}/interactions"
+    params = {'query': query, 'api_key': CONFIG['USER_API_KEY']}
+    
+    try:
+        # print(f"Attempting to GET from Central API: {api_url} with params: {params}") # Debug
+        response = requests.get(api_url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            try:
+                response_data = response.json()
+                # print(f"Central API response JSON: {response_data}") # Debug
+                if response_data.get("found"):
+                    return response_data.get("response")
+                else:
+                    # print("Query not found in central API (found: false).") # Debug
+                    return None # Yanıt bulundu ama 'found' false veya yok
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON response from central server: {response.text}. Exception: {e}")
+                return None
+        # Subtask: "If not 200, print an error ... and return None."
+        # 404 (Not Found) özel bir durum değil, genel bir hata olarak ele alınır.
+        else:
+            print(f"Central server returned error {response.status_code}: {response.text}")
+            return None
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Error connecting to central server: {e}")
+        return None
+
+def get_from_database(query):
+    """Veritabanından veya merkezi API'den sorgu için daha önce verilmiş cevabı arar"""
+    if CONFIG["CENTRAL_API_URL"] and CONFIG["USER_API_KEY"]:
+        # Merkezi API yapılandırılmışsa, SADECE API'yi kullan.
+        # print(f"Central API is configured. Querying central API for: {query[:30]}...") # Debug
+        # get_from_central_api hatayı kendi içinde basar ve None döner.
+        return get_from_central_api(query) 
+        # Yerel DB'ye fallback yok. API sonucu neyse o (cevap veya None).
+    else:
+        # Merkezi API yapılandırılmamışsa, uyarı ver ve None dön (subtask tanımına göre).
+        print("Warning: Central API not configured. Cannot fetch interaction from central server.")
+        return None # Yerel SQLite'a fallback yok.
+    
+    # NOT: Aşağıdaki kod etkisiz hale geldi, çünkü yukarıdaki koşul ya API'yi çağırır ya da None döner.
+    # Eğer yerel fallback isteniyorsa, yukarıdaki 'else' bloğu değiştirilmeli.
+    # Mevcut subtask tanımına göre, bu kısım çalışmamalı.
+    # query_hash = hashlib.md5(query.encode()).hexdigest()
+    conn = sqlite3.connect(CONFIG["db_path"])
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            "SELECT response FROM interactions WHERE query_hash = ? ORDER BY timestamp DESC LIMIT 1",
+            (query_hash,)
+        )
+        result = cursor.fetchone()
+    except sqlite3.Error as e:
+        print(f"SQLite error during get_from_database: {e}")
+        result = None
+    finally:
+        conn.close()
+    
+    # if result: # Bu blok artık etkisiz.
+        # print("Response found in local database.") # Debugging
+        # return result[0] # Bu blok artık etkisiz.
+    
+    # print("Response not found in local database.") # Debugging
+    # return None # Bu blok artık etkisiz.
+
+# execute_command fonksiyonu burada başlıyor...
 def execute_command(command):
     """Sistem komutunu çalıştırır"""
     try:
@@ -419,6 +526,13 @@ def parse_internal_commands(query):
 def interactive_mode():
     """İnteraktif mod - sürekli sorguları işler"""
     settings = get_user_settings()
+
+    # Merkezi API ayarlarını kontrol et
+    if not CONFIG["CENTRAL_API_URL"] or not CONFIG["USER_API_KEY"]:
+        warning_message = "ErenAI is not fully configured for central server communication. Q&A will only use local cache (if any) and GPT."
+        if settings["language"] == "tr":
+            warning_message = "ErenAI merkezi sunucu iletişimi için tam olarak yapılandırılmamış. Soru-Cevap yalnızca yerel önbelleği (varsa) ve GPT'yi kullanacaktır."
+        print(f"UYARI: {warning_message}")
     
     if settings["language"] == "tr":
         print("ErenAI: Merhaba! Size nasıl yardımcı olabilirim? (Çıkmak için 'exit' veya 'quit' yazın)")
@@ -507,7 +621,11 @@ def main():
     parser.add_argument("--no-suggestions", "-n", action="store_true", help="Komut önerilerini kapa")
     parser.add_argument("--version", "-v", action="store_true", help="Sürüm bilgisini göster")
     args = parser.parse_args()
-    
+
+    # Merkezi API ayarlarını kontrol et (setup modu hariç)
+    if not args.setup and (not CONFIG["CENTRAL_API_URL"] or not CONFIG["USER_API_KEY"]):
+        print("WARNING: ErenAI is not fully configured for central server communication. Q&A will only use local cache (if any) and GPT. Please run with --setup or set ERENAI_CENTRAL_API_URL and ERENAI_USER_API_KEY environment variables.")
+
     # Sürüm bilgisi
     if args.version:
         print("ErenAI v1.0.0 - SSH Tabanlı AI Asistanı")
