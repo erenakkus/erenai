@@ -23,13 +23,13 @@ ErenAI is a powerful command-line AI assistant that brings OpenAI's capabilities
 
 ### One-Line Install
 ```bash
-curl -fsSL https://raw.githubusercontent.com/[username]/erenai/main/erenai_setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/erenakkus/erenai/main/erenai_setup.sh | bash
 ```
 
 ### Manual Install
 ```bash
 # Clone the repository
-git clone https://github.com/[username]/erenai.git
+git clone https://github.com/erenakkus/erenai.git
 cd erenai
 
 # Run the installer
@@ -59,48 +59,6 @@ erenai "nginx restart command"
 # Programming concepts
 erenai "What is Docker?"
 # Output: Docker is containerization platform. Creates isolated environments. Packages apps with dependencies.
-```
-
-## 📁 Project Structure
-
-```
-~/.erenai/
-├── erenai.py              # Main Python script
-├── erenai_wrapper.sh      # Bash wrapper
-├── config.json            # API key storage
-├── erenai.db             # SQLite database
-└── logs/
-    └── erenai.log        # Usage logs
-```
-
-## 🗄️ Database Schema
-
-ErenAI uses SQLite to store questions and answers efficiently:
-
-### Tables
-- **qa_cache**: Stores question-answer pairs with usage statistics
-- **usage_stats**: Tracks usage across different servers
-
-```sql
--- Cache table
-CREATE TABLE qa_cache (
-    id INTEGER PRIMARY KEY,
-    question_hash TEXT UNIQUE,
-    question TEXT,
-    answer TEXT,
-    created_at TIMESTAMP,
-    usage_count INTEGER
-);
-
--- Usage statistics
-CREATE TABLE usage_stats (
-    id INTEGER PRIMARY KEY,
-    server_name TEXT,
-    question TEXT,
-    answer TEXT,
-    source TEXT,
-    timestamp TIMESTAMP
-);
 ```
 
 ## ⚡ Performance Stats
