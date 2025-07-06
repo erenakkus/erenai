@@ -1,5 +1,3 @@
-# README.md dosyasını oluştur
-cat > README.md << 'EOF'
 # 🤖 ErenAI - Terminal AI Assistant
 
 > **Smart, Fast, Cached** - Your personal AI assistant that learns from every question
